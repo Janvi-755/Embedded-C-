@@ -1,0 +1,202 @@
+/*! ADC Interfacing for ATmega328P */
+
+#include "firebird_simulation.h"
+#include <stdbool.h>
+#include <util/delay.h>
+#include <stdio.h>
+#include "lcd.h"
+#include "uart.h"
+
+
+/* ---------------- White Line Sensors Config ---------------- */
+
+void wl_sensors_port_config()
+{
+	// make pins input
+	wl_sensors_ddr_reg &= ~((1<<left_wl_sensor_pin) |
+							 (1<<center_wl_sensor_pin) |
+							 (1<<right_wl_sensor_pin));
+
+	// disable pull-ups
+	wl_sensors_port_reg &= ~((1<<left_wl_sensor_pin) |
+							  (1<<center_wl_sensor_pin) |
+							  (1<<right_wl_sensor_pin));
+}
+
+
+/* ---------------- IR Sensors Config ---------------- */
+
+void ir_prox_sensors_port_config()
+{
+	// 3rd and 4th IR sensors
+	ir_prox_3_4_sensors_ddr_reg &= ~((1<<ir_prox_3_sensor_pin) |
+									 (1<<ir_prox_4_sensor_pin));
+
+	ir_prox_3_4_sensors_port_reg &= ~((1<<ir_prox_3_sensor_pin) |
+									  (1<<ir_prox_4_sensor_pin));
+
+	// 5th IR sensor
+	ir_prox_5_sensor_ddr_reg &= ~(1<<ir_prox_5_sensor_pin);
+
+	ir_prox_5_sensor_port_reg &= ~(1<<ir_prox_5_sensor_pin);
+}
+
+
+/* ---------------- ADC Initialization ---------------- */
+
+void adc_init()
+{
+	// Enable ADC and set prescaler = 64
+	ADCSRA_reg = (1<<ADEN_bit) |
+				 (1<<ADPS2_bit) |
+				 (1<<ADPS1_bit);
+
+	// Disable auto trigger
+	ADCSRB_reg = 0x00;
+
+	// AVCC reference
+	ADMUX_reg = (1<<REFS0_bit);
+
+	// Left adjust result for 8-bit output
+	ADMUX_reg |= (1<<ADLAR_bit);
+
+	// Disable Analog Comparator
+	ACSR_reg |= (1<<ACD_bit);
+}
+
+
+/* ---------------- Select ADC Channel ---------------- */
+
+void select_adc_channel(unsigned char channel_num)
+{
+	ADMUX_reg &= 0xE0;     // clear previous channel
+	ADMUX_reg |= channel_num;
+}
+
+
+/* ---------------- Start ADC ---------------- */
+
+void start_adc(void)
+{
+	ADCSRA_reg |= (1<<ADSC_bit);
+}
+
+
+/* ---------------- Check Conversion ---------------- */
+
+bool check_adc_conversion_complete(void)
+{
+	if(ADCSRA_reg & (1<<ADIF_bit))
+		return true;
+	else
+		return false;
+}
+
+
+/* ---------------- Read ADC Result ---------------- */
+
+unsigned char read_adc_converted_data(void)
+{
+	unsigned char adc_data;
+
+	adc_data = ADCH_reg;
+
+	ADCSRA_reg |= (1<<ADIF_bit);
+
+	return adc_data;
+}
+
+
+/* ---------------- Reset Registers ---------------- */
+
+void reset_adc_config_registers(void)
+{
+	ADCSRA_reg &= ~(1<<ADSC_bit);
+	ADMUX_reg &= 0xE0;
+}
+
+
+/* ---------------- ADC Conversion Function ---------------- */
+
+unsigned char convert_analog_channel_data(unsigned char channel)
+{
+	unsigned char adc_data;
+
+	select_adc_channel(channel);
+
+	start_adc();
+
+	while(!(check_adc_conversion_complete()));
+
+	adc_data = read_adc_converted_data();
+
+	reset_adc_config_registers();
+
+	return adc_data;
+}
+
+
+/* ---------------- MAIN ---------------- */
+
+int main(void)
+{
+
+	wl_sensors_port_config();
+	ir_prox_sensors_port_config();
+
+	adc_init();
+
+	lcd_port_config();
+	lcd_init();
+
+	uart_init(UBRR_VALUE);
+
+
+	unsigned char left_wl_sensor_data;
+	unsigned char center_wl_sensor_data;
+	unsigned char right_wl_sensor_data;
+
+	unsigned char ir_prox_3_sensor_data;
+	unsigned char ir_prox_4_sensor_data;
+	unsigned char ir_prox_5_sensor_data;
+
+	char tx_buffer[30];
+
+
+	while(1)
+	{
+
+		left_wl_sensor_data =
+		convert_analog_channel_data(left_wl_sensor_channel);
+
+		center_wl_sensor_data =
+		convert_analog_channel_data(center_wl_sensor_channel);
+
+		right_wl_sensor_data =
+		convert_analog_channel_data(right_wl_sensor_channel);
+
+		ir_prox_3_sensor_data =
+		convert_analog_channel_data(ir_prox_3_sensor_channel);
+
+		ir_prox_4_sensor_data =
+		convert_analog_channel_data(ir_prox_4_sensor_channel);
+
+		ir_prox_5_sensor_data =
+		convert_analog_channel_data(ir_prox_5_sensor_channel);
+
+
+		lcd_numeric_value(1,1,left_wl_sensor_data,3);
+		lcd_numeric_value(1,5,center_wl_sensor_data,3);
+		lcd_numeric_value(1,9,right_wl_sensor_data,3);
+
+		lcd_numeric_value(2,1,ir_prox_3_sensor_data,3);
+		lcd_numeric_value(2,5,ir_prox_4_sensor_data,3);
+		lcd_numeric_value(2,9,ir_prox_5_sensor_data,3);
+
+
+		sprintf(tx_buffer,"Center WL data: %03d\n",
+		center_wl_sensor_data);
+
+		uart_tx_string(tx_buffer);
+	}
+}
