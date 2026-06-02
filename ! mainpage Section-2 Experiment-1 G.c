@@ -1,0 +1,64 @@
+ * \subsection Aim
+ * To get started with the Embedded C Programming and rectify the errors in the skeleton code
+ * such that the Buzzer already present and interfaced on Firebird V robot turns ON and OFF at an interval of a second.
+ *
+ * \subsection Connections
+ * Buzzer : PC3
+ */
+
+
+//---------------------------------- HEADER FILES -----------------------------------------------------
+#include "firebird_simulation.h"
+#include <util/delay.h>
+
+//---------------------------------- FUNCTIONS ----------------------------------------------------------
+
+/**
+ * @brief Makes ONLY 'buzzer_pin' as output and initially sets it to low
+ */
+void buzzer_pin_config(void) {
+
+	// Make buzzer_pin (PC3) as output
+	buzzer_ddr_reg |= (1 << buzzer_pin);
+
+	// Set buzzer_pin to low initially
+	buzzer_port_reg &= ~(1 << buzzer_pin);
+}
+
+
+/**
+ * @brief Sets ONLY 'buzzer_pin' to high, hence turns ON the Buzzer
+ */
+void buzzer_on(void) {
+
+	// Set buzzer_pin high
+	buzzer_port_reg |= (1 << buzzer_pin);
+}
+
+
+/**
+ * @brief Sets ONLY 'buzzer_pin' to low, hence turns OFF the Buzzer
+ */
+void buzzer_off(void) {
+
+	// Set buzzer_pin low
+	buzzer_port_reg &= ~(1 << buzzer_pin);
+}
+
+
+//---------------------------------- MAIN ----------------------------------------------------------------
+int main(void) {
+
+	// Do not modify anything here
+	buzzer_pin_config();
+
+	while (1)
+	{
+		buzzer_on();
+		_delay_ms(1000);
+
+		buzzer_off();
+		_delay_ms(1000);
+	}
+}
+//---------------------------------- END ------------------------------------------------------------------
