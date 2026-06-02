@@ -1,0 +1,183 @@
+/*! \mainpage Section-3 Experiment-2: ADC Interfacing with Interrupt
+ *
+ *
+ * \subsection Aim
+ * To get the 10-bit ADC result from the 2nd Sharp Sensor in Single Conversion Mode using ADC conversion Interrupt.
+ *
+ * \subsection Connections
+ * 2nd Sharp Sensor : PK2 (ADC Channel 10)
+ */
+
+//---------------------------------- HEADER FILES -----------------------------------------------------
+#include "firebird_simulation.h"
+#include <stdbool.h>
+#include <util/delay.h>
+#include <avr/interrupt.h>
+#include <stdio.h>
+#include "lcd.h"
+#include "uart.h"
+
+//---------------------------------- GLOBAL VARIABLES ---------------------------------------------------
+unsigned int adc_10bit_data = 0;     // To store 10-bit ADC converted data of a sensor
+
+//---------------------------------- FUNCTIONS ----------------------------------------------------------
+
+/**
+ * @brief Makes ONLY 2nd Sharp sensor pin as input and deactivates pull-up for ONLY 2nd Sharp sensor pin
+ */
+void sharp_sensor_pin_config()
+{
+	// Make ONLY 2nd Sharp sensor pin as input
+	sharp_sensor_ddr_reg = sharp_sensor_ddr_reg & ~(1 << sharp_sensor_pin);
+
+	// Deactivate pull-up for ONLY 2nd Sharp sensor pin
+	sharp_sensor_port_reg = sharp_sensor_port_reg & ~(1 << sharp_sensor_pin);
+}
+
+
+/**
+ * @brief Initializes the Analog-to-Digital converter inside the micro-controller
+ */
+void adc_init()
+{
+	// Clear the Global Interrupt Flag bit in SREG
+	cli();
+
+	// Enable ADC, Enable ADC Interrupt, Prescaler = 64
+	// ADEN = 1, ADIE = 1, ADPS2 = 1, ADPS1 = 1, ADPS0 = 0
+	// ADSC = 0, ADATE = 0, ADIF = 0
+	ADCSRA_reg = (1 << ADEN_bit) | (1 << ADIE_bit) | (1 << ADPS2_bit) | (1 << ADPS1_bit);
+
+	// Disable Analog Comparator Multiplexer, MUX5 bit and ADC Auto Trigger Source bits
+	ADCSRB_reg = 0x00;
+
+	// Use AVCC as reference and clear MUX[4:0] initially
+	ADMUX_reg = (1 << REFS0_bit);
+
+	// Disable ADLAR to read 10-bit ADC result in right-adjusted format
+	ADMUX_reg = ADMUX_reg & ~(1 << ADLAR_bit);
+
+	// Disable Analog Comparator
+	ACSR_reg = ACSR_reg | (1 << ACD_bit);
+
+	// Set the Global Interrupt Flag bit in SREG
+	sei();
+}
+
+
+/**
+ * @brief Sets the MUX[5:0] bits according to the sensor's channel number as input
+ */
+void select_adc_channel(unsigned char channel_num)
+{
+	// Clear previous channel selection
+	reset_adc_config_registers();
+
+	// Set MUX5 bit in ADCSRB for ADC channel numbers 8 to 15
+	if (channel_num > 7)
+	{
+		ADCSRB_reg = ADCSRB_reg | (1 << MUX5_bit);
+	}
+	else
+	{
+		ADCSRB_reg = ADCSRB_reg & ~(1 << MUX5_bit);
+	}
+
+	// Set MUX[4:0] bits in ADMUX
+	ADMUX_reg = ADMUX_reg | (channel_num & 0x1F);
+}
+
+
+/**
+ * @brief Starts the ADC by setting the ADSC bit in ADCSRA register
+ */
+void start_adc(void)
+{
+	// Set ADSC bit in ADCSRA register
+	ADCSRA_reg = ADCSRA_reg | (1 << ADSC_bit);
+}
+
+
+/**
+ * @brief Reset ADC config registers, ADCSRB and ADMUX registers
+ */
+void reset_adc_config_registers(void)
+{
+	// Clear the MUX5 bit for next conversion
+	ADCSRB_reg = ADCSRB_reg & ~(1 << MUX5_bit);
+
+	// Clear the MUX[4:0] bits for next conversion
+	ADMUX_reg = ADMUX_reg & 0xE0;
+}
+
+
+// Read the ADC data after the conversion is complete
+ISR(ADC_vect)
+{
+	// Read 10-bit ADC result
+	adc_10bit_data = ADCW;
+
+	// Reset ADC channel configuration after conversion
+	reset_adc_config_registers();
+}
+
+
+/**
+ * @brief Convert the analog readings to 10-bit digital format from the sensor's ADC channel number as input
+ */
+void convert_analog_channel_data(unsigned char sensor_channel_number)
+{
+	// Do not modify this function
+	select_adc_channel(sensor_channel_number);
+
+	start_adc();
+}
+
+
+//---------------------------------- MAIN ----------------------------------------------------------------
+
+/**
+ * @brief Main Function
+ *
+ * @details First Initializes the 2nd Sharp sensor and sends its ADC converted data on LCD and UART
+ */
+int main(void)
+{
+	// Do not modify anything except required part inside while loop
+
+	sharp_sensor_pin_config();			// Initialize the 2nd Sharp sensor
+
+	adc_init();							// Initialize the ADC
+
+	lcd_port_config();					// Initialize the LCD port
+	lcd_init();							// Initialize the LCD
+
+	uart_init(UBRR_VALUE);				// Initialize the UART
+
+	// To store 10-bit data of 2nd Sharp sensor
+	int sharp_sensor_data;
+
+	// To create string for transmitting 2nd Sharp sensor raw data over UART and LCD
+	char tx_raw_adc_data_buffer[25], tx_voltage_buffer[25], lcd_print_raw_adc_data_string[25], lcd_print_voltage_string[25];
+
+	convert_analog_channel_data(sharp_sensor_channel);
+
+	while (1)
+	{
+		if ((ADCSRA_reg & (1 << ADSC_bit)) != 0x40)
+		{
+			// Store converted ADC value
+			sharp_sensor_data = adc_10bit_data;
+
+			sprintf(lcd_print_raw_adc_data_string, "Raw data: %04d", sharp_sensor_data);
+			lcd_string(1, 1, lcd_print_raw_adc_data_string);
+
+			sprintf(tx_raw_adc_data_buffer, "Raw data: %04d\t", sharp_sensor_data);
+			uart_tx_string(tx_raw_adc_data_buffer);
+
+			convert_analog_channel_data(sharp_sensor_channel);
+		}
+	}
+}
+
+//---------------------------------- END -----------------------------------------------------------------
